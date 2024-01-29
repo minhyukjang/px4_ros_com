@@ -53,6 +53,7 @@
 #include <px4_msgs/msg/vehicle_gps_position.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
 #include <px4_msgs/msg/sensor_combined.hpp>
+
 #include <rclcpp/rclcpp.hpp>
 #include <stdint.h>
 
@@ -68,6 +69,8 @@ float lat,lon,alt;
 float lat_home, lon_home, alt_home;
 float radius = 1;
 uint16_t mission_status = 0;
+bool flag_control_offboard_enabled = false;
+bool offboard_signal_received = false; // true if offboard_signal from "pixhawk" is received,
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
@@ -111,53 +114,49 @@ public:
 		    [this](const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg) {
 				LocalPositionCallback(msg);
 	    	});
+		subscription_vehicle_control_mode = this->create_subscription<px4_msgs::msg::VehicleControlMode>(
+		    "/fmu/vehicle_control_mode/out",10,
+		    [this](const px4_msgs::msg::VehicleControlMode::SharedPtr msg) {
+				VehicleControlModeCallback(msg);
+	    	});
 		// subscription_GPS = this->create_subscription<px4_msgs::msg::VehicleGlobalPosition>(
 		// 	"fmu/vehicle_global_position/out",10,
 		// 	[this](const px4_msgs::msg::VehicleGlobalPosition::SharedPtr msg) {
 		// 		GlobalPositionCallback(msg);
 		// 	});
-		//latest_local_position_msg_ = std::make_shared<px4_msgs::msg::VehicleLocalPosition>();
+		latest_local_position_msg_ = std::make_shared<px4_msgs::msg::VehicleLocalPosition>();
 		//latest_global_position_msg_ = std::make_shared<px4_msgs::msg::VehicleGlobalPosition>();
 
 		offboard_setpoint_counter_ = 0;
-
+		
 		// loop!!
 		auto timer_callback = [this]() -> void {
-
-			if (offboard_setpoint_counter_ == 50) {
-				// Change to Offboard mode after 20 setpoints
-				this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1, 6, -1);
-
-				// Set home position before arm
-				//this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_HOME, 1, 0, -1);
-				//this->set_home_pos();
-
-				// Arm the vehicle
-				this->arm();
-				//set_home_pos(latest_local_position_msg_); // set home position to return
+			if(flag_control_offboard_enabled == true && offboard_signal_received == false){ // if offboard enabled and if it's the first time that mmu received the signal, initialize and start offboard command
+				//enter this if-statement only once!!
+				offboard_signal_received = true; //mark that mmu has received the offboard command
+				set_home_pos();
+				this->arm(); 
+				offboard_setpoint_counter_ = 0; // reset the offboard counter
 				
-
 			}
 
 			//-------------------------------------------------//
 			//LocalPositionCallback(latest_local_position_msg_);
 			//GlobalPositionCallback(latest_global_position_msg_);
-			
-
 			//-------------------------------------------------//
 
+			// loop keep sending signals regardless of the flight mode
             // offboard_control_mode needs to be paired with trajectory_setpoint
-			
 			publish_offboard_control_mode();
 			publish_trajectory_setpoint(offboard_setpoint_counter_);
 
-			if(offboard_setpoint_counter_ == 2000) { //landing at t = 40s!
+			if(offboard_setpoint_counter_ == 2000 && offboard_signal_received == true) { //landing at t = 40s after the offboard mode arming!
 				//this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1, 4, 6);//PX4_CUSTOM_SUB_MODE_AUTO_LAND
 				this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_NAV_LAND);
 				//this->land();
 				RCLCPP_INFO(this->get_logger(), "Land command send");
 				//mission_status = 1; // change to landing mode (Goto Home position)
-				//this->disarm();
+				this->disarm();
 			}
 
            	// stop the counter after reaching 2001
@@ -184,6 +183,7 @@ private:
 	// Below added
     rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr subscription_local;
 	rclcpp::Subscription<px4_msgs::msg::VehicleGlobalPosition>::SharedPtr subscription_GPS;
+	rclcpp::Subscription<px4_msgs::msg::VehicleControlMode>::SharedPtr subscription_vehicle_control_mode;
 	std::shared_ptr<px4_msgs::msg::VehicleLocalPosition> latest_local_position_msg_;
 	std::shared_ptr<px4_msgs::msg::VehicleGlobalPosition> latest_global_position_msg_;
     // Above added
@@ -200,10 +200,25 @@ private:
 	//Below added
 	void LocalPositionCallback(const px4_msgs::msg::VehicleLocalPosition::SharedPtr &msg);
 	void GlobalPositionCallback(const px4_msgs::msg::VehicleGlobalPosition::SharedPtr &msg);
+	void VehicleControlModeCallback(const px4_msgs::msg::VehicleControlMode::SharedPtr &msg);
 	void set_home_pos();
 	//Above added
 };
-
+/**
+ * @brief Member function to handle the vehicle control mode callback logic
+*/
+void OffboardControl::VehicleControlModeCallback(const px4_msgs::msg::VehicleControlMode::SharedPtr &msg) {
+	flag_control_offboard_enabled = msg->flag_control_offboard_enabled;
+	//std::cout << "\n\n";
+	//std::cout << "offboard mode status : " << flag_control_offboard_enabled << std::endl;
+	// std::cout << "\n\n\n\n\n";
+	// std::cout << "RECEIVED VEHICLE Local POSITION DATA" << std::endl;
+	// std::cout << "==================================" << std::endl;
+	// std::cout << "ts: " << msg->timestamp << std::endl;
+	// std::cout << "X: " << X << std::endl;
+	// std::cout << "Y: " << Y << std::endl;
+	// std::cout << "Z: " << Z << std::endl;
+}
 /**
  * @brief Member function to handle the local position callback logic
 */
@@ -240,21 +255,27 @@ void OffboardControl::GlobalPositionCallback(const px4_msgs::msg::VehicleGlobalP
 	std::cout << "alt: " << alt  << std::endl;
 }
 void OffboardControl::set_home_pos(){
-	std::cout << "Global Home position Set" << std::endl;
+	std::cout << "Local Home position Set" << std::endl;
+	X_home = latest_local_position_msg_->x;
+	Y_home = latest_local_position_msg_->y;
+	Z_home = latest_local_position_msg_->z;
+	std::cout <<"X home (m): " << X_home <<std::endl;
+	std::cout <<"Y home (m): " << Y_home <<std::endl;
+	std::cout <<"Z home (m): " << Z_home <<std::endl;
 	// lat_home = latest_global_position_msg_->lat;
 	// lon_home = latest_global_position_msg_->lon;
 	// alt_home = latest_global_position_msg_->alt;
-	VehicleCommand msg{};
-	msg.timestamp = timestamp_.load();
-	msg.param1 = 1; // use current pos
-	msg.command = VehicleCommand::VEHICLE_CMD_DO_SET_HOME;
-	msg.target_system = 1;
-	msg.target_component = 1;
-	msg.source_system = 1;
-	msg.source_component = 1;
-	msg.from_external = true;
+	// VehicleCommand msg{};
+	// msg.timestamp = timestamp_.load();
+	// msg.param1 = 1; // use current pos
+	// msg.command = VehicleCommand::VEHICLE_CMD_DO_SET_HOME;
+	// msg.target_system = 1;
+	// msg.target_component = 1;
+	// msg.source_system = 1;
+	// msg.source_component = 1;
+	// msg.from_external = true;
 
-	vehicle_command_publisher_->publish(msg);
+	// vehicle_command_publisher_->publish(msg);
 }
 
 /**
@@ -312,12 +333,13 @@ void OffboardControl::publish_offboard_control_mode() const {
  *        vehicle hover at 2 meters.
  */
 void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_counter_) const {
+	offboard_setpoint_counter_ = offboard_setpoint_counter_;
 	TrajectorySetpoint msg{};
 	msg.timestamp = timestamp_.load();
 	if(mission_status == 0){ // hovering at z = -2m
-		msg.x = 0.0;
-		msg.y = 0.0;
-		msg.z = -2.0;
+		msg.x = X_home + 0.0;
+		msg.y = Y_home + 0.0;
+		msg.z = Z_home +-2.0;
 		msg.yaw = 0; 
 		// if(offboard_setpoint_counter_<=250){//hovering
 		// 	msg.x = radius;
