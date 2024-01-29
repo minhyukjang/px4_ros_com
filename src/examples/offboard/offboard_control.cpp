@@ -61,10 +61,12 @@
 #include "std_msgs/msg/string.hpp"
 #include <math.h>
 
-float X, Y, Z;
+float X, Y, Z, vx, vy, vz;
 float X_home, Y_home, Z_home;
+float X_tmp, Y_tmp, Z_tmp, vx_tmp, vy_tmp, vz_tmp;
 float lat,lon,alt;
 float lat_home, lon_home, alt_home;
+float radius = 1;
 uint16_t mission_status = 0;
 
 using namespace std::chrono;
@@ -109,13 +111,13 @@ public:
 		    [this](const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg) {
 				LocalPositionCallback(msg);
 	    	});
-		subscription_GPS = this->create_subscription<px4_msgs::msg::VehicleGlobalPosition>(
-			"fmu/vehicle_global_position/out",10,
-			[this](const px4_msgs::msg::VehicleGlobalPosition::SharedPtr msg) {
-				GlobalPositionCallback(msg);
-			});
-		latest_local_position_msg_ = std::make_shared<px4_msgs::msg::VehicleLocalPosition>();
-		latest_global_position_msg_ = std::make_shared<px4_msgs::msg::VehicleGlobalPosition>();
+		// subscription_GPS = this->create_subscription<px4_msgs::msg::VehicleGlobalPosition>(
+		// 	"fmu/vehicle_global_position/out",10,
+		// 	[this](const px4_msgs::msg::VehicleGlobalPosition::SharedPtr msg) {
+		// 		GlobalPositionCallback(msg);
+		// 	});
+		//latest_local_position_msg_ = std::make_shared<px4_msgs::msg::VehicleLocalPosition>();
+		//latest_global_position_msg_ = std::make_shared<px4_msgs::msg::VehicleGlobalPosition>();
 
 		offboard_setpoint_counter_ = 0;
 
@@ -127,7 +129,8 @@ public:
 				this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1, 6, -1);
 
 				// Set home position before arm
-				this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_HOME, 1, 0, -1);
+				//this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_HOME, 1, 0, -1);
+				//this->set_home_pos();
 
 				// Arm the vehicle
 				this->arm();
@@ -137,7 +140,7 @@ public:
 			}
 
 			//-------------------------------------------------//
-			LocalPositionCallback(latest_local_position_msg_);
+			//LocalPositionCallback(latest_local_position_msg_);
 			//GlobalPositionCallback(latest_global_position_msg_);
 			
 
@@ -146,19 +149,19 @@ public:
             // offboard_control_mode needs to be paired with trajectory_setpoint
 			
 			publish_offboard_control_mode();
-			publish_trajectory_setpoint();
+			publish_trajectory_setpoint(offboard_setpoint_counter_);
 
-			if(offboard_setpoint_counter_ == 1000) { //landing at t = 20s!
-				this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1, 4, 6);//PX4_CUSTOM_SUB_MODE_AUTO_LAND
-				//this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_NAV_LAND);
+			if(offboard_setpoint_counter_ == 2000) { //landing at t = 40s!
+				//this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1, 4, 6);//PX4_CUSTOM_SUB_MODE_AUTO_LAND
+				this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_NAV_LAND);
 				//this->land();
 				RCLCPP_INFO(this->get_logger(), "Land command send");
 				//mission_status = 1; // change to landing mode (Goto Home position)
 				//this->disarm();
 			}
 
-           	// stop the counter after reaching 1001
-			if (offboard_setpoint_counter_ < 1001) {
+           	// stop the counter after reaching 2001
+			if (offboard_setpoint_counter_ < 2001) {
 				offboard_setpoint_counter_++;
 			}
 			
@@ -190,14 +193,14 @@ private:
 	uint64_t offboard_setpoint_counter_;   //!< counter for the number of setpoints sent
 	
 	void publish_offboard_control_mode() const;
-	void publish_trajectory_setpoint() const;
+	void publish_trajectory_setpoint(uint64_t offboard_setpoint_counter_) const;
 	void publish_vehicle_command(uint16_t command, float param1 = 0.0,
 				     float param2 = 0.0, float param3 = 0.0) const;
 
 	//Below added
 	void LocalPositionCallback(const px4_msgs::msg::VehicleLocalPosition::SharedPtr &msg);
 	void GlobalPositionCallback(const px4_msgs::msg::VehicleGlobalPosition::SharedPtr &msg);
-	void set_home_pos(const px4_msgs::msg::VehicleLocalPosition::SharedPtr &msg);
+	void set_home_pos();
 	//Above added
 };
 
@@ -208,13 +211,17 @@ void OffboardControl::LocalPositionCallback(const px4_msgs::msg::VehicleLocalPos
 	X = msg->x;
 	Y = msg->y;
 	Z = msg->z;
-	std::cout << "\n\n\n\n\n";
-	std::cout << "RECEIVED VEHICLE Local POSITION DATA" << std::endl;
-	std::cout << "==================================" << std::endl;
-	std::cout << "ts: " << msg->timestamp << std::endl;
-	std::cout << "X: " << X << std::endl;
-	std::cout << "Y: " << Y << std::endl;
-	std::cout << "Z: " << Z << std::endl;
+	vx = msg->vx;
+	vy = msg->vy;
+	vz = msg->vz;
+	
+	// std::cout << "\n\n\n\n\n";
+	// std::cout << "RECEIVED VEHICLE Local POSITION DATA" << std::endl;
+	// std::cout << "==================================" << std::endl;
+	// std::cout << "ts: " << msg->timestamp << std::endl;
+	// std::cout << "X: " << X << std::endl;
+	// std::cout << "Y: " << Y << std::endl;
+	// std::cout << "Z: " << Z << std::endl;
 }
 /**
  * @brief Member function to handle the local position callback logic
@@ -232,11 +239,22 @@ void OffboardControl::GlobalPositionCallback(const px4_msgs::msg::VehicleGlobalP
 	std::cout << "lon: " << lon << std::endl;
 	std::cout << "alt: " << alt  << std::endl;
 }
-void OffboardControl::set_home_pos(const px4_msgs::msg::VehicleLocalPosition::SharedPtr &msg){
-	std::cout << "Local Home position Set" << std::endl;
-	X_home = msg->x;
-	Y_home = msg->y;
-	Z_home = msg->z;
+void OffboardControl::set_home_pos(){
+	std::cout << "Global Home position Set" << std::endl;
+	// lat_home = latest_global_position_msg_->lat;
+	// lon_home = latest_global_position_msg_->lon;
+	// alt_home = latest_global_position_msg_->alt;
+	VehicleCommand msg{};
+	msg.timestamp = timestamp_.load();
+	msg.param1 = 1; // use current pos
+	msg.command = VehicleCommand::VEHICLE_CMD_DO_SET_HOME;
+	msg.target_system = 1;
+	msg.target_component = 1;
+	msg.source_system = 1;
+	msg.source_component = 1;
+	msg.from_external = true;
+
+	vehicle_command_publisher_->publish(msg);
 }
 
 /**
@@ -293,7 +311,7 @@ void OffboardControl::publish_offboard_control_mode() const {
  *        For this example, it sends a trajectory setpoint to make the
  *        vehicle hover at 2 meters.
  */
-void OffboardControl::publish_trajectory_setpoint() const {
+void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_counter_) const {
 	TrajectorySetpoint msg{};
 	msg.timestamp = timestamp_.load();
 	if(mission_status == 0){ // hovering at z = -2m
@@ -301,6 +319,19 @@ void OffboardControl::publish_trajectory_setpoint() const {
 		msg.y = 0.0;
 		msg.z = -2.0;
 		msg.yaw = 0; 
+		// if(offboard_setpoint_counter_<=250){//hovering
+		// 	msg.x = radius;
+		// 	msg.y = 0.0;
+		// 	msg.z = -2.0;
+		// 	msg.yaw = 0; 
+		// }
+		// else{
+		// 	msg.x = radius * cos(0.0041888*2*(offboard_setpoint_counter_ - 250));
+		// 	msg.y = radius * sin(0.0041888*2*(offboard_setpoint_counter_ - 250));
+		// 	msg.z = -2.0;
+		// 	msg.yaw = 0; 
+		// }
+		
 	}
 	else{ // Should not reach here
 		std::cout <<"Something is wrong!!" <<std::endl;
