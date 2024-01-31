@@ -132,6 +132,7 @@ public:
 		// loop!!
 		auto timer_callback = [this]() -> void {
 			if(flag_control_offboard_enabled == true && offboard_signal_received == false){ // if offboard enabled and if it's the first time that mmu received the signal, initialize and start offboard command
+				//this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1, 6);
 				//enter this if-statement only once!!
 				offboard_signal_received = true; //mark that mmu has received the offboard command
 				set_home_pos();
@@ -139,7 +140,10 @@ public:
 				offboard_setpoint_counter_ = 0; // reset the offboard counter
 				
 			}
-
+			// if(flag_control_offboard_enabled == false && offboard_signal_received == true){ // this means that the remote switch was at offboard mode but changed to other mode(e.g., position mode)
+			// 	//reset the offboard_signal_received == false
+			// 	offboard_signal_received = false;
+			// }
 			//-------------------------------------------------//
 			//LocalPositionCallback(latest_local_position_msg_);
 			//GlobalPositionCallback(latest_global_position_msg_);
@@ -150,7 +154,7 @@ public:
 			publish_offboard_control_mode();
 			publish_trajectory_setpoint(offboard_setpoint_counter_);
 
-			if(offboard_setpoint_counter_ == 2000 && offboard_signal_received == true) { //landing at t = 40s after the offboard mode arming!
+			if(offboard_setpoint_counter_ == 1000 && offboard_signal_received == true) { //landing at t = 20s after the offboard mode arming!
 				//this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1, 4, 6);//PX4_CUSTOM_SUB_MODE_AUTO_LAND
 				this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_NAV_LAND);
 				//this->land();
