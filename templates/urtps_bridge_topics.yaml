@@ -67,3 +67,7 @@ rtps:
     send: true
   - msg: VehicleAttitude
     send: true
+  - msg: VehicleAttitudeSetpoint
+    receive: true
+  - msg: VehicleThrustSetpoint
+    receive: true
