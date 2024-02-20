@@ -520,9 +520,11 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			
 		}
 		else if(offboard_setpoint_counter_ <= 4000){ // Circular motion with radius 1m using LQR at 2.5m height. t = 10s ~ 40s
-			// --- Desired Trajectory in NED frame--- // 
-			x_del_desired =radius * sin(0.002094*(offboard_setpoint_counter_ - 1000));
-			y_del_desired =radius * cos(0.002094*(offboard_setpoint_counter_ - 1000));	
+			// --- Desired Trajectory in NED frame (centered at home position)--- // 
+			//x_del_desired =radius * sin(0.002094*(offboard_setpoint_counter_ - 1000));
+			//y_del_desired =radius * cos(0.002094*(offboard_setpoint_counter_ - 1000));
+			x_del_desired = 0.0;
+			y_del_desired = 1.0;
 			z_del_desired = -2.5; // 2.5m height
 
 			// Cooordinate change : From NED To the frame from Dynamics (X = Y, Y = X, Z = -Z)
@@ -544,29 +546,29 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			
 			//------DOB PART --------------------------------------//
 			// fill DOB intermediate values (State estimator block)
-			qx_pl2 = (2-a1)*qx_pl1 + a0*X_del_dyn - (1-a1+a0)*qx_now;
-			qy_pl2 = (2-a1)*qy_pl1 + a0*Y_del_dyn - (1-a1+a0)*qy_now;
-			qz_pl2 = (2-a1)*qz_pl1 + a0*Z_del_dyn - (1-a1+a0)*qz_now;
+			// qx_pl2 = (2-a1)*qx_pl1 + a0*X_del_dyn - (1-a1+a0)*qx_now;
+			// qy_pl2 = (2-a1)*qy_pl1 + a0*Y_del_dyn - (1-a1+a0)*qy_now;
+			// qz_pl2 = (2-a1)*qz_pl1 + a0*Z_del_dyn - (1-a1+a0)*qz_now;
 
-			// DOB lower block output (after Pn_inverse)
-			theta_tmp = (qx_pl2 - 2*qx_pl1 + qx_now)/(g*tau*tau);
-			phi_tmp = -(qy_pl2 - 2*qy_pl1 + qy_now)/(g*tau*tau);
-			DelU1_tmp = (qz_pl2 - 2*qz_pl1 + qz_now)*mass_drone/(tau*tau);
+			// // DOB lower block output (after Pn_inverse)
+			// theta_tmp = (qx_pl2 - 2*qx_pl1 + qx_now)/(g*tau*tau);
+			// phi_tmp = -(qy_pl2 - 2*qy_pl1 + qy_now)/(g*tau*tau);
+			// DelU1_tmp = (qz_pl2 - 2*qz_pl1 + qz_now)*mass_drone/(tau*tau);
 
-			// DOB p part
-			p_theta_pl1 = -(a1-2)*p_theta_now + a0*theta_mi1 - (1-a1+a0)*p_theta_mi1;
-			p_phi_pl1 = -(a1-2)*p_phi_now + a0*phi_mi1 - (1-a1+a0)*p_phi_mi1;
-			p_DelU1_pl1 = -(a1-2)*p_DelU1_now + a0*DelU1_mi1 - (1-a1+a0)*p_DelU1_mi1;
+			// // DOB p part
+			// p_theta_pl1 = -(a1-2)*p_theta_now + a0*theta_mi1 - (1-a1+a0)*p_theta_mi1;
+			// p_phi_pl1 = -(a1-2)*p_phi_now + a0*phi_mi1 - (1-a1+a0)*p_phi_mi1;
+			// p_DelU1_pl1 = -(a1-2)*p_DelU1_now + a0*DelU1_mi1 - (1-a1+a0)*p_DelU1_mi1;
 
-			// temporary output of DOB before it meets the outloop controller
-			theta_tmp = theta_tmp - p_theta_now;
-			phi_tmp = phi_tmp - p_phi_now;
-			DelU1_tmp = DelU1_tmp - p_DelU1_now;
+			// // temporary output of DOB before it meets the outloop controller
+			// theta_tmp = theta_tmp - p_theta_now;
+			// phi_tmp = phi_tmp - p_phi_now;
+			// DelU1_tmp = DelU1_tmp - p_DelU1_now;
 
-			//saturate the DOB output
-			theta_tmp = std::clamp(theta_tmp, -0.35f, 0.35f); // theta 0.35rad = 20 \degree
-			phi_tmp = std::clamp(phi_tmp, -0.35f, 0.35f); // phi 0.35rad = 20 \degree
-			DelU1_tmp = std::clamp(DelU1_tmp, -10.0f, 10.0f); // +-10 N centered at hovering thrust
+			// //saturate the DOB output
+			// theta_tmp = std::clamp(theta_tmp, -0.35f, 0.35f); // theta 0.35rad = 20 \degree
+			// phi_tmp = std::clamp(phi_tmp, -0.35f, 0.35f); // phi 0.35rad = 20 \degree
+			// DelU1_tmp = std::clamp(DelU1_tmp, -10.0f, 10.0f); // +-10 N centered at hovering thrust
 			//--------------------------------------------------------//
 
 
@@ -580,7 +582,7 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			theta_nom = K_pos[0][0]*(x_del_desired_dyn - X_del_dyn) + K_pos[0][1]*(y_del_desired_dyn- Y_del_dyn) + K_pos[0][2]*(z_del_desired_dyn - Z_del_dyn) + K_pos[0][3]*(0 - vx_dyn) + K_pos[0][4]*(0-vy_dyn) + K_pos[0][5]*(0-vz_dyn);
 			phi_nom = K_pos[1][0]*(x_del_desired_dyn - X_del_dyn)  + K_pos[1][1]*(y_del_desired_dyn- Y_del_dyn) + K_pos[1][2]*(z_del_desired_dyn - Z_del_dyn) + K_pos[1][3]*(0 - vx_dyn) + K_pos[1][4]*(0-vy_dyn) + K_pos[1][5]*(0-vz_dyn);
 			Del_U1_nom = K_pos[2][0]*(x_del_desired_dyn - X_del_dyn)  + K_pos[2][1]*(y_del_desired_dyn- Y_del_dyn)+ K_pos[2][2]*(z_del_desired_dyn - Z_del_dyn) + K_pos[2][3]*(0 - vx_dyn) + K_pos[2][4]*(0-vy_dyn) + K_pos[2][5]*(0-vz_dyn);
-			// // reverse sign! Since u = - K (x-x_desired)
+			// // reverse sign! Since u = - K (x_desired - X)
 			// theta_nom *=-1;
 			// phi_nom *=-1;
 			// Del_U1_nom *=-1; //
@@ -594,9 +596,9 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			DelU1_tmp = - DelU1_tmp;
 
 			// //SET Below 0 to Not use DOB!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Cutoff DOB to test only LQR
-			// theta_tmp = 0;
-			// phi_tmp = 0;
-			// DelU1_tmp = 0;
+			theta_tmp = 0;
+			phi_tmp = 0;
+			DelU1_tmp = 0;
 
 			//Calculate input !!!
 			theta_now = theta_nom - theta_tmp;
@@ -604,9 +606,9 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			DelU1_now = Del_U1_nom - DelU1_tmp;
 
 			// Clip values ! 
-			theta_now = std::clamp(theta_now, -0.35f, 0.35f); // theta 0.35rad = 20 \degree
-			phi_now = std::clamp(phi_now, -0.35f, 0.35f); // phi 0.35rad = 20 \degree
-			DelU1_now = std::clamp(DelU1_now, -10.0f, 10.0f); // +-10 N centered at hovering thrust
+			theta_now = std::clamp(theta_now, -0.3f, 0.3f); // theta 0.35rad = 20 \degree
+			phi_now = std::clamp(phi_now, -0.3f, 0.3f); // phi 0.35rad = 20 \degree
+			DelU1_now = std::clamp(DelU1_now, -8.0f, 8.0f); // +-10 N centered at hovering thrust
 			
 			//--------Conversion--------------------------------------//
 
@@ -619,7 +621,6 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			pos_acceleration[0] = Y_ddot_tmp;
 			pos_acceleration[1] = X_ddot_tmp;
 			pos_acceleration[2] = -Z_ddot_tmp;
-
 			
 			std::copy(std::begin(pos_acceleration), std::end(pos_acceleration), msg.acceleration.begin());
 			msg.yaw = heading_home;
