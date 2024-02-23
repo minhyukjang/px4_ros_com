@@ -66,7 +66,7 @@
 
 float X, Y, Z, vx, vy, vz, vx_b,vy_b, vz_b, heading;
 float X_del, Y_del, Z_del; // offset from the home position (NED)!!
-float X_del_b, Y_del_b, Z_del_b; // offset from home position but rotated theta phi psi
+float X_del_b, Y_del_b, Z_del_b; // offset from home position but rotated  psi (vehicle-1 heading frame)
 float X_err, Y_err, Z_err, vx_err, vy_err, vz_err;
 float X_err_b, Y_err_b, Z_err_b, vx_err_b, vy_err_b, vz_err_b;
 float X_home, Y_home, Z_home, heading_home;
@@ -559,51 +559,65 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			x_del_desired = 0.0;
 			y_del_desired = 1.0;
 			z_del_desired = -2.5; // 2.5m height
-			heading_now = heading;
+			heading_now = heading;	
+
+			// local position in Vehicle-1 frame (heading frame)
+			X_del_b =  X_del * cos(heading_now) + Y_del * sin(heading_now);
+			Y_del_b = -X_del * sin(heading_now) + Y_del * cos(heading_now);
+			Z_del_b = Z_del;
+
+			// ------------------------------------------//
+			// First Calculate X, Y, Z error in NED inertial frame
+			X_err = x_del_desired - X_del;
+			Y_err = y_del_desired - Y_del;
+			Z_err = z_del_desired - Z_del;
+			vx_err = 0 - vx;
+			vy_err = 0 - vy;
+			vz_err = 0 - vz;
 
 
-			// Cooordinate change : From NED To the frame from Dynamics (X = Y, Y = X, Z = -Z)
-			// For dynamics frame, positive Z means upward 
-			// X_del_dyn = Y_del;
-			// Y_del_dyn = X_del;
-			// Z_del_dyn = -Z_del;
-
-			// vx_dyn = vy;
-			// vy_dyn = vx;
-			// vz_dyn = -vz;
-
-			// x_del_desired_dyn = y_del_desired;
-			// y_del_desired_dyn = x_del_desired;
-			// z_del_desired_dyn = -z_del_desired;
-
-			// heading_dyn = wrapToPi(M_PI/2 - heading);
-			//heading_dyn = (M_PI/2 - heading);
+			// Change error to vehicle-1 frame
 			
+			X_tmp =  X_err * cos(heading_now) + Y_err * sin(heading_now);
+			Y_tmp = -X_err * sin(heading_now) + Y_err * cos(heading_now);
+			vx_tmp =  vx_err * cos(heading_now) + vy_err * sin(heading_now);
+			vy_tmp = -vx_err * sin(heading_now) + vy_err * cos(heading_now);
+
+			X_err = X_tmp;
+			Y_err = Y_tmp;
+			vx_err = vx_tmp;
+			vy_err = vy_tmp;
+
+			//desired theta/phi/DelU1 in vehicle-1 frame
+			theta_nom = K_pos[0][0]*(X_err) + K_pos[0][1]*(Y_err) + K_pos[0][2]*(Z_err) + K_pos[0][3]*(vx_err) + K_pos[0][4]*(vy_err) + K_pos[0][5]*(vz_err);
+			phi_nom = K_pos[1][0]*(X_err)  + K_pos[1][1]*(Y_err) + K_pos[1][2]*(Z_err) + K_pos[1][3]*(vx_err) + K_pos[1][4]*(vy_err) + K_pos[1][5]*(vz_err);
+			Del_U1_nom = K_pos[2][0]*(X_err)  + K_pos[2][1]*(Y_err)+ K_pos[2][2]*(Z_err) + K_pos[2][3]*(vx_err) + K_pos[2][4]*(vy_err) + K_pos[2][5]*(vz_err);
+
 			//------DOB PART --------------------------------------//
 			// fill DOB intermediate values (State estimator block)
-			// qx_pl2 = (2-a1)*qx_pl1 + a0*X_del_dyn - (1-a1+a0)*qx_now;
-			// qy_pl2 = (2-a1)*qy_pl1 + a0*Y_del_dyn - (1-a1+a0)*qy_now;
-			// qz_pl2 = (2-a1)*qz_pl1 + a0*Z_del_dyn - (1-a1+a0)*qz_now;
+			qx_pl2 = (2-a1)*qx_pl1 + a0*X_del_b - (1-a1+a0)*qx_now;
+			qy_pl2 = (2-a1)*qy_pl1 + a0*Y_del_b - (1-a1+a0)*qy_now;
+			qz_pl2 = (2-a1)*qz_pl1 + a0*Z_del_b - (1-a1+a0)*qz_now;
 
-			// // DOB lower block output (after Pn_inverse)
-			// theta_tmp = (qx_pl2 - 2*qx_pl1 + qx_now)/(g*tau*tau);
-			// phi_tmp = -(qy_pl2 - 2*qy_pl1 + qy_now)/(g*tau*tau);
-			// DelU1_tmp = (qz_pl2 - 2*qz_pl1 + qz_now)*mass_drone/(tau*tau);
+			// DOB lower block output (after Pn_inverse)
+			theta_tmp = -(qx_pl2 - 2*qx_pl1 + qx_now)/(g*tau*tau);
+			phi_tmp = (qy_pl2 - 2*qy_pl1 + qy_now)/(g*tau*tau);
+			DelU1_tmp = (qz_pl2 - 2*qz_pl1 + qz_now)*mass_drone/(tau*tau);
 
-			// // DOB p part
-			// p_theta_pl1 = -(a1-2)*p_theta_now + a0*theta_mi1 - (1-a1+a0)*p_theta_mi1;
-			// p_phi_pl1 = -(a1-2)*p_phi_now + a0*phi_mi1 - (1-a1+a0)*p_phi_mi1;
-			// p_DelU1_pl1 = -(a1-2)*p_DelU1_now + a0*DelU1_mi1 - (1-a1+a0)*p_DelU1_mi1;
+			// DOB p part
+			p_theta_pl1 = -(a1-2)*p_theta_now + a0*theta_mi1 - (1-a1+a0)*p_theta_mi1;
+			p_phi_pl1 = -(a1-2)*p_phi_now + a0*phi_mi1 - (1-a1+a0)*p_phi_mi1;
+			p_DelU1_pl1 = -(a1-2)*p_DelU1_now + a0*DelU1_mi1 - (1-a1+a0)*p_DelU1_mi1;
 
-			// // temporary output of DOB before it meets the outloop controller
-			// theta_tmp = theta_tmp - p_theta_now;
-			// phi_tmp = phi_tmp - p_phi_now;
-			// DelU1_tmp = DelU1_tmp - p_DelU1_now;
+			// temporary output of DOB before it meets the outloop controller
+			theta_tmp = theta_tmp - p_theta_now;
+			phi_tmp = phi_tmp - p_phi_now;
+			DelU1_tmp = DelU1_tmp - p_DelU1_now;
 
-			// //saturate the DOB output
-			// theta_tmp = std::clamp(theta_tmp, -0.35f, 0.35f); // theta 0.35rad = 20 \degree
-			// phi_tmp = std::clamp(phi_tmp, -0.35f, 0.35f); // phi 0.35rad = 20 \degree
-			// DelU1_tmp = std::clamp(DelU1_tmp, -10.0f, 10.0f); // +-10 N centered at hovering thrust
+			//saturate the DOB output
+			theta_tmp = std::clamp(theta_tmp, -0.35f, 0.35f); // theta 0.35rad = 20 \degree
+			phi_tmp = std::clamp(phi_tmp, -0.35f, 0.35f); // phi 0.35rad = 20 \degree
+			DelU1_tmp = std::clamp(DelU1_tmp, -10.0f, 10.0f); // +-10 N centered at hovering thrust
 			//--------------------------------------------------------//
 
 
@@ -624,33 +638,7 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			// Y_ddot = (-cos(theta)*sin(heading_now))*X_ddot_tmp + (-sin(phi)*sin(theta)*sin(heading_now)+cos(phi)*cos(heading_now))*Y_ddot_tmp + (cos(phi)*sin(theta)*sin(heading_now)+sin(phi)*cos(heading_now))*Z_ddot_tmp;
 			// Z_ddot = sin(theta)*X_ddot_tmp -sin(phi)*cos(theta)*Y_ddot_tmp + cos(phi)*cos(theta)*Z_ddot_tmp;
 			
-			// First Calculate X, Y, Z error in NED inertial frame
-			X_err = x_del_desired - X_del;
-			Y_err = y_del_desired - Y_del;
-			Z_err = z_del_desired - Z_del;
-			vx_err = 0 - vx;
-			vy_err = 0 - vy;
-			vz_err = 0 - vz;
-
-
-			// Rotate theta/phi/psi to change error in body attitude
-			//quaternionToNED(quatern, phi, theta, psi); // update phi, theta, psi
-			//NED_rotate2Body(X_err, Y_err, Z_err); // rotate position error 
-			//NED_rotate2Body(vx_err, vy_err, vz_err); // rotate velocity error
-			X_tmp =  X_err * cos(heading_now) + Y_err * sin(heading_now);
-			Y_tmp = -X_err * sin(heading_now) + Y_err * cos(heading_now);
-			vx_tmp =  vx_err * cos(heading_now) + vy_err * sin(heading_now);
-			vy_tmp = -vx_err * sin(heading_now) + vy_err * cos(heading_now);
-
-			X_err = X_tmp;
-			Y_err = Y_tmp;
-			vx_err = vx_tmp;
-			vy_err = vy_tmp;
-
-			//desired theta/phi/DelU1 in vehicle-1 frame
-			theta_nom = K_pos[0][0]*(X_err) + K_pos[0][1]*(Y_err) + K_pos[0][2]*(Z_err) + K_pos[0][3]*(vx_err) + K_pos[0][4]*(vy_err) + K_pos[0][5]*(vz_err);
-			phi_nom = K_pos[1][0]*(X_err)  + K_pos[1][1]*(Y_err) + K_pos[1][2]*(Z_err) + K_pos[1][3]*(vx_err) + K_pos[1][4]*(vy_err) + K_pos[1][5]*(vz_err);
-			Del_U1_nom = K_pos[2][0]*(X_err)  + K_pos[2][1]*(Y_err)+ K_pos[2][2]*(Z_err) + K_pos[2][3]*(vx_err) + K_pos[2][4]*(vy_err) + K_pos[2][5]*(vz_err);
+			
 			
 			
 			// // reverse sign! Since u = - K (x_desired - X)
@@ -662,14 +650,14 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			// phi_nom = std::clamp(phi_nom, -0.35f, 0.35f); // phi 0.35rad = 20 \degree
 			// Del_U1_nom = std::clamp(Del_U1_nom, -10.0f, 10.0f); // +-10 N centered at hovering thrust0
 			//----------------------------------------------------------//
-			// theta_tmp = - theta_tmp;
-			// phi_tmp = - phi_tmp;
-			// DelU1_tmp = - DelU1_tmp;
+			theta_tmp = - theta_tmp;
+			phi_tmp = - phi_tmp;
+			DelU1_tmp = - DelU1_tmp;
 
 			// //SET Below 0 to Not use DOB!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Cutoff DOB to test only LQR
-			theta_tmp = 0;
-			phi_tmp = 0;
-			DelU1_tmp = 0;
+			// theta_tmp = 0;
+			// phi_tmp = 0;
+			// DelU1_tmp = 0;
 
 			//Calculate input !!!
 			theta_now = theta_nom - theta_tmp;
@@ -751,33 +739,33 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			trajectory_setpoint_publisher_->publish(msg);
 			
 			// --------- time shift !!!!------------------//
-			// theta_mi2 = theta_mi1;
-			// theta_mi1 = theta_now;
+			theta_mi2 = theta_mi1;
+			theta_mi1 = theta_now;
 
-			// phi_mi2 = phi_mi1;
-			// phi_mi1 = phi_now;
+			phi_mi2 = phi_mi1;
+			phi_mi1 = phi_now;
 
-			// DelU1_mi2 = DelU1_mi1;
-			// DelU1_mi1 = DelU1_now;
+			DelU1_mi2 = DelU1_mi1;
+			DelU1_mi1 = DelU1_now;
 
-			// //
-			// qx_now = qx_pl1;
-			// qx_pl1 = qx_pl2;
+			//
+			qx_now = qx_pl1;
+			qx_pl1 = qx_pl2;
 
-			// qy_now = qy_pl1;
-			// qy_pl1 = qy_pl2;
+			qy_now = qy_pl1;
+			qy_pl1 = qy_pl2;
 
-			// qz_now = qz_pl1;
-			// qz_pl1 = qz_pl2;
-			// //
-			// p_theta_mi1 = p_theta_now;
-			// p_theta_now = p_theta_pl1;
+			qz_now = qz_pl1;
+			qz_pl1 = qz_pl2;
+			//
+			p_theta_mi1 = p_theta_now;
+			p_theta_now = p_theta_pl1;
 
-			// p_phi_mi1 = p_phi_now;
-			// p_phi_now = p_phi_pl1;
+			p_phi_mi1 = p_phi_now;
+			p_phi_now = p_phi_pl1;
 
-			// p_DelU1_mi1 = p_DelU1_now;
-			// p_DelU1_now = p_DelU1_pl1;
+			p_DelU1_mi1 = p_DelU1_now;
+			p_DelU1_now = p_DelU1_pl1;
 			//---------------------------------------------//
 			
 
