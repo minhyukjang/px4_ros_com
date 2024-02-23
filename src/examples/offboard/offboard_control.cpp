@@ -116,16 +116,11 @@ std::array<float,4> quatern={0.0, 0.0, 0.0, 0.0};
 
 float g = 9.81; // gravity constant
 
-/*-- Position Control LQR Gain --//
-K = [ 8.4545	-0.0000	0.0000	1.5616	-0.0000	0.0000
-	0.0000	-8.4545	0.0000	-0.0000	-1.5616	0.0000
-	-0.0000	-0.0000	9.7431	-0.0000	-0.0000	7.7076 ]
-*/
 // the below Control Gain should be re-calculated if the parameters & Gain matrix are revised!!
 float K_pos[3][6] = {
-	{-1.4864,	0.0,	0.0,	-0.541,		0.0,	0.0},
-	{0.0,	1.4864,	0.0,	0.0,	0.541,	0.0},
-	{0.0,	0.0,	3.5356,		0.0,		0.0,	1.9547}	
+	{-1.5346,	0.0,	0.0,	-0.6,		0.0,	0.0},
+	{0.0,	1.5346,	0.0,	0.0,	0.6,	0.0},
+	{0.0,	0.0,	6.0419,		0.0,		0.0,	4.629}	
 };
 uint16_t mission_status = 1; // change here manually to confirm what mission to handle!!
 /* 
