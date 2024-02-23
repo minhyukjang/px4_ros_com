@@ -556,8 +556,8 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			// --- Desired Trajectory in NED frame (centered at home position)--- // 
 			x_del_desired =radius * sin(0.002094*(offboard_setpoint_counter_ - 1000));
 			y_del_desired =radius * cos(0.002094*(offboard_setpoint_counter_ - 1000));
-			// x_del_desired = 0.0;
-			// y_del_desired = 1.0;
+			x_del_desired = 0.0;
+			y_del_desired = 1.0;
 			z_del_desired = -2.5; // 2.5m height
 			heading_now = heading;
 
