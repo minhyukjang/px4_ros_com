@@ -550,7 +550,6 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			p_theta_now = theta_now = p_theta_mi1 = 0.0;
 			p_phi_now = phi_now = p_phi_mi1 = 0.0;
 			p_DelU1_now = DelU1_now = p_DelU1_mi1 = 0.0;
-			
 		}
 		else if(offboard_setpoint_counter_ <= 4000){ // Circular motion with radius 1m using LQR at 2.5m height. t = 10s ~ 40s
 			// --- Desired Trajectory in NED frame (centered at home position)--- // 
