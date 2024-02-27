@@ -53,7 +53,8 @@
 #include <px4_msgs/msg/vehicle_gps_position.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
 #include <px4_msgs/msg/sensor_combined.hpp>
-// #include <px4_msgs/msg/vehicle_attitude.hpp>
+#include <px4_msgs/msg/vehicle_attitude.hpp>
+#include <px4_msgs/msg/vehicle_attitude_setpoint.hpp>
 
 #include <rclcpp/rclcpp.hpp>
 #include <stdint.h>
@@ -71,6 +72,7 @@ float X_err, Y_err, Z_err, vx_err, vy_err, vz_err;
 float X_err_b, Y_err_b, Z_err_b, vx_err_b, vy_err_b, vz_err_b;
 float X_home, Y_home, Z_home, heading_home;
 float X_tmp, Y_tmp, Z_tmp, vx_tmp, vy_tmp, vz_tmp, X_ddot_tmp, Y_ddot_tmp, Z_ddot_tmp, X_ddot, Y_ddot, Z_ddot;
+float X_ddot_sp, Y_ddot_sp, Z_ddot_sp;
 float lat,lon,alt;
 float lat_home, lon_home, alt_home;
 float radius = 1;
@@ -143,6 +145,8 @@ public:
 			this->create_publisher<OffboardControlMode>("fmu/offboard_control_mode/in", 10);
 		trajectory_setpoint_publisher_ =
 			this->create_publisher<TrajectorySetpoint>("fmu/trajectory_setpoint/in", 10);
+		vehicle_attitude_setpoint_publisher_ =
+			this->create_publisher<VehicleAttitudeSetpoint>("fmu/vehicle_attitude_setpoint/in", 10);
 		vehicle_command_publisher_ =
 			this->create_publisher<VehicleCommand>("fmu/vehicle_command/in", 10);
 		
@@ -151,6 +155,8 @@ public:
 			this->create_publisher<OffboardControlMode>("fmu/offboard_control_mode/in");
 		trajectory_setpoint_publisher_ =
 			this->create_publisher<TrajectorySetpoint>("fmu/trajectory_setpoint/in");
+		vehicle_attitude_setpoint_publisher_ =
+			this->create_publisher<VehicleAttitudeSetpoint>("fmu/vehicle_attitude_setpoint/in", 10);
 		vehicle_command_publisher_ =
 			this->create_publisher<VehicleCommand>("fmu/vehicle_command/in");
 		//vehicle_status_subcriber =
@@ -171,23 +177,29 @@ public:
 		    [this](const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg) {
 				LocalPositionCallback(msg);
 	    	});
+		// subscription_trajectory_setpoint = this->create_subscription<px4_msgs::msg::TrajectorySetpoint>(
+		//     "/fmu/trajectory_setpoint/out",10,
+		//     [this](const px4_msgs::msg::TrajectorySetpoint::SharedPtr msg) {
+		// 		TrajectorySetpointCallback(msg);
+	    // 	});
 		// subscription_attitude = this->create_subscription<px4_msgs::msg::VehicleAttitude>(
 		//     "/fmu/vehicle_attitude/out",10,
 		//     [this](const px4_msgs::msg::VehicleAttitude::SharedPtr msg) {
 		// 		VehicleAttitudeCallback(msg);
 	    // 	});
+		subscription_attitude_setpoint = this->create_subscription<px4_msgs::msg::VehicleAttitudeSetpoint>(
+		    "/fmu/vehicle_attitude_setpoint/out",10,
+		    [this](const px4_msgs::msg::VehicleAttitudeSetpoint::SharedPtr msg) {
+				VehicleAttitudeSetpointCallback(msg);
+	    	});
 		subscription_vehicle_control_mode = this->create_subscription<px4_msgs::msg::VehicleControlMode>(
 		    "/fmu/vehicle_control_mode/out",10,
 		    [this](const px4_msgs::msg::VehicleControlMode::SharedPtr msg) {
 				VehicleControlModeCallback(msg);
 	    	});
-		// subscription_GPS = this->create_subscription<px4_msgs::msg::VehicleGlobalPosition>(
-		// 	"fmu/vehicle_global_position/out",10,
-		// 	[this](const px4_msgs::msg::VehicleGlobalPosition::SharedPtr msg) {
-		// 		GlobalPositionCallback(msg);
-		// 	});
 		latest_local_position_msg_ = std::make_shared<px4_msgs::msg::VehicleLocalPosition>();
-		//latest_vehicle_attitude_msg_ = std::make_shared<px4_msgs::msg::VehicleAttitude>();
+		//latest_trajectory_setpoint_msg_ = std::make_shared<px4_msgs::msg::TrajectorySetpoint>();
+		latest_vehicle_attitude_setpoint_msg_ = std::make_shared<px4_msgs::msg::VehicleAttitudeSetpoint>();
 		//latest_global_position_msg_ = std::make_shared<px4_msgs::msg::VehicleGlobalPosition>();
 
 		offboard_setpoint_counter_ = 0;
@@ -243,6 +255,7 @@ private:
 
 	rclcpp::Publisher<OffboardControlMode>::SharedPtr offboard_control_mode_publisher_;
 	rclcpp::Publisher<TrajectorySetpoint>::SharedPtr trajectory_setpoint_publisher_;
+	rclcpp::Publisher<VehicleAttitudeSetpoint>::SharedPtr vehicle_attitude_setpoint_publisher_;
 	rclcpp::Publisher<VehicleCommand>::SharedPtr vehicle_command_publisher_;
 	rclcpp::Subscription<px4_msgs::msg::Timesync>::SharedPtr timesync_sub_;
 
@@ -250,10 +263,12 @@ private:
     rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr subscription_local;
 	rclcpp::Subscription<px4_msgs::msg::VehicleGlobalPosition>::SharedPtr subscription_GPS;
 	rclcpp::Subscription<px4_msgs::msg::VehicleControlMode>::SharedPtr subscription_vehicle_control_mode;
-	//rclcpp::Subscription<px4_msgs::msg::VehicleAttitude>::SharedPtr subscription_attitude;
+	//rclcpp::Subscription<px4_msgs::msg::TrajectorySetpoint>::SharedPtr subscription_trajectory_setpoint;
+	rclcpp::Subscription<px4_msgs::msg::VehicleAttitudeSetpoint>::SharedPtr subscription_attitude_setpoint;
 	std::shared_ptr<px4_msgs::msg::VehicleLocalPosition> latest_local_position_msg_;
 	std::shared_ptr<px4_msgs::msg::VehicleGlobalPosition> latest_global_position_msg_;
-	//std::shared_ptr<px4_msgs::msg::VehicleAttitude> latest_vehicle_attitude_msg_;
+	//std::shared_ptr<px4_msgs::msg::TrajectorySetpoint> latest_trajectory_setpoint_msg_;
+	std::shared_ptr<px4_msgs::msg::VehicleAttitudeSetpoint> latest_vehicle_attitude_setpoint_msg_;
     // Above added
 
 	std::atomic<uint64_t> timestamp_;   //!< common synced timestamped
@@ -269,7 +284,8 @@ private:
 	void LocalPositionCallback(const px4_msgs::msg::VehicleLocalPosition::SharedPtr &msg);
 	void GlobalPositionCallback(const px4_msgs::msg::VehicleGlobalPosition::SharedPtr &msg);
 	void VehicleControlModeCallback(const px4_msgs::msg::VehicleControlMode::SharedPtr &msg);
-	//void VehicleAttitudeCallback(const px4_msgs::msg::VehicleAttitude::SharedPtr &msg);
+	//void TrajectorySetpointCallback(const px4_msgs::msg::TrajectorySetpoint::SharedPtr &msg);
+	void VehicleAttitudeSetpointCallback(const px4_msgs::msg::VehicleAttitudeSetpoint::SharedPtr &msg);
 	void set_home_pos();
 	void print_current_position();
 	float wrapToPi(float angle) const;
@@ -277,6 +293,11 @@ private:
 	void NED_rotate2Body(float& X_,float& Y_,float& Z_) const;
 	//Above added
 };
+// void OffboardControl::TrajectorySetpointCallback(const px4_msgs::msg::TrajectorySetpoint::SharedPtr &msg) {
+// 	X_ddot_sp = msg->acceleration[0];
+// 	Y_ddot_sp = msg->acceleration[1];
+// 	Z_ddot_sp = msg->acceleration[2];
+// }
 void OffboardControl::NED_rotate2Body(float& X_,float& Y_,float& Z_) const{
 	
 	X_tmp = cos(theta)*cos(psi)*X_ + (sin(phi)*sin(theta)*cos(psi) + cos(phi)*sin(psi))*Y_ + (-cos(phi)*sin(theta)*cos(psi)+sin(phi)*sin(psi))*Z_;
@@ -349,10 +370,11 @@ void OffboardControl::LocalPositionCallback(const px4_msgs::msg::VehicleLocalPos
 	Y_del = Y - Y_home;
 	Z_del = Z - Z_home;
 }
-// void OffboardControl::VehicleAttitudeCallback(const px4_msgs::msg::VehicleAttitude::SharedPtr &msg) {
-// 	quatern = msg->q;
-// 	//std::cout << "q[0] : " << quatern[0] <<std::endl;
-// }
+void OffboardControl::VehicleAttitudeSetpointCallback(const px4_msgs::msg::VehicleAttitudeSetpoint::SharedPtr &msg) {
+	phi = msg->roll_body;
+	theta = msg->pitch_body;
+	//std::cout << "q[0] : " << quatern[0] <<std::endl;
+}
 /**
  * @brief Member function to handle the global position callback logic
 */
@@ -449,11 +471,11 @@ void OffboardControl::publish_offboard_control_mode(uint64_t offboard_setpoint_c
 			msg.attitude = false;
 			msg.body_rate = false;
 		}
-		else if(offboard_setpoint_counter_ <= 4000){ // use LQR position control
-			msg.position = false;
+		else if(offboard_setpoint_counter_ <= 4000){
+			msg.position = true;
 			msg.velocity = false;
-			msg.acceleration = true; //
-			msg.attitude = false; //
+			msg.acceleration = false; //
+			msg.attitude = true; //
 			msg.body_rate = false;
 		}
 		if(offboard_setpoint_counter_<=5000){ // use position message (PID) for Landing
@@ -476,7 +498,9 @@ void OffboardControl::publish_offboard_control_mode(uint64_t offboard_setpoint_c
 void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_counter_) const {
 	offboard_setpoint_counter_ = offboard_setpoint_counter_;
 	TrajectorySetpoint msg{};
+	VehicleAttitudeSetpoint msgA{};
 	msg.timestamp = timestamp_.load();
+	msgA.timestamp = timestamp_.load();
 	if(mission_status == 0){ //takeoff -> circle motion -> landing (PID)
 		if(flag_control_offboard_enabled == false){ // Even though offboard control mode is disabled, any signals need to be sent over 2 Hz
 			msg.x = X_home + 0.0;
@@ -555,8 +579,9 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			// --- Desired Trajectory in NED frame (centered at home position)--- // 
 			x_del_desired =radius * sin(0.002094*(offboard_setpoint_counter_ - 1000));
 			y_del_desired =radius * cos(0.002094*(offboard_setpoint_counter_ - 1000));
-			x_del_desired = 0.0;
-			y_del_desired = 1.0;
+
+			// x_del_desired = 0.0;
+			// y_del_desired = 1.0;
 			z_del_desired = -2.5; // 2.5m height
 			heading_now = heading;	
 
@@ -567,91 +592,64 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 
 			// ------------------------------------------//
 			// First Calculate X, Y, Z error in NED inertial frame
-			X_err = x_del_desired - X_del;
-			Y_err = y_del_desired - Y_del;
-			Z_err = z_del_desired - Z_del;
-			vx_err = 0 - vx;
-			vy_err = 0 - vy;
-			vz_err = 0 - vz;
+			// X_err = x_del_desired - X_del;
+			// Y_err = y_del_desired - Y_del;
+			// Z_err = z_del_desired - Z_del;
+			// vx_err = 0 - vx;
+			// vy_err = 0 - vy;
+			// vz_err = 0 - vz;
 
 
-			// Change error to vehicle-1 frame
+			// // Change error to vehicle-1 frame
 			
-			X_tmp =  X_err * cos(heading_now) + Y_err * sin(heading_now);
-			Y_tmp = -X_err * sin(heading_now) + Y_err * cos(heading_now);
-			vx_tmp =  vx_err * cos(heading_now) + vy_err * sin(heading_now);
-			vy_tmp = -vx_err * sin(heading_now) + vy_err * cos(heading_now);
+			// X_tmp =  X_err * cos(heading_now) + Y_err * sin(heading_now);
+			// Y_tmp = -X_err * sin(heading_now) + Y_err * cos(heading_now);
+			// vx_tmp =  vx_err * cos(heading_now) + vy_err * sin(heading_now);
+			// vy_tmp = -vx_err * sin(heading_now) + vy_err * cos(heading_now);
+			// X_err = X_tmp;
+			// Y_err = Y_tmp;
+			// vx_err = vx_tmp;
+			// vy_err = vy_tmp;
 
-			X_err = X_tmp;
-			Y_err = Y_tmp;
-			vx_err = vx_tmp;
-			vy_err = vy_tmp;
+			//quaternionToNED(quatern, phi, theta, psi);
 
-			//desired theta/phi/DelU1 in vehicle-1 frame
-			theta_nom = K_pos[0][0]*(X_err) + K_pos[0][1]*(Y_err) + K_pos[0][2]*(Z_err) + K_pos[0][3]*(vx_err) + K_pos[0][4]*(vy_err) + K_pos[0][5]*(vz_err);
-			phi_nom = K_pos[1][0]*(X_err)  + K_pos[1][1]*(Y_err) + K_pos[1][2]*(Z_err) + K_pos[1][3]*(vx_err) + K_pos[1][4]*(vy_err) + K_pos[1][5]*(vz_err);
-			Del_U1_nom = K_pos[2][0]*(X_err)  + K_pos[2][1]*(Y_err)+ K_pos[2][2]*(Z_err) + K_pos[2][3]*(vx_err) + K_pos[2][4]*(vy_err) + K_pos[2][5]*(vz_err);
+			//desired theta/phi/DelU1 in vehicle-1 frame LQR
+			// theta_nom = K_pos[0][0]*(X_err) + K_pos[0][1]*(Y_err) + K_pos[0][2]*(Z_err) + K_pos[0][3]*(vx_err) + K_pos[0][4]*(vy_err) + K_pos[0][5]*(vz_err);
+			// phi_nom = K_pos[1][0]*(X_err)  + K_pos[1][1]*(Y_err) + K_pos[1][2]*(Z_err) + K_pos[1][3]*(vx_err) + K_pos[1][4]*(vy_err) + K_pos[1][5]*(vz_err);
+			// Del_U1_nom = K_pos[2][0]*(X_err)  + K_pos[2][1]*(Y_err)+ K_pos[2][2]*(Z_err) + K_pos[2][3]*(vx_err) + K_pos[2][4]*(vy_err) + K_pos[2][5]*(vz_err);
 
 			//------DOB PART --------------------------------------//
 			// fill DOB intermediate values (State estimator block)
 			qx_pl2 = (2-a1)*qx_pl1 + a0*X_del_b - (1-a1+a0)*qx_now;
 			qy_pl2 = (2-a1)*qy_pl1 + a0*Y_del_b - (1-a1+a0)*qy_now;
-			qz_pl2 = (2-a1)*qz_pl1 + a0*Z_del_b - (1-a1+a0)*qz_now;
+			//qz_pl2 = (2-a1)*qz_pl1 + a0*Z_del_b - (1-a1+a0)*qz_now;
 
 			// DOB lower block output (after Pn_inverse)
 			theta_tmp = -(qx_pl2 - 2*qx_pl1 + qx_now)/(g*tau*tau);
 			phi_tmp = (qy_pl2 - 2*qy_pl1 + qy_now)/(g*tau*tau);
-			DelU1_tmp = (qz_pl2 - 2*qz_pl1 + qz_now)*mass_drone/(tau*tau);
+			//DelU1_tmp = (qz_pl2 - 2*qz_pl1 + qz_now)*mass_drone/(tau*tau);
 
 			// DOB p part
-			p_theta_pl1 = -(a1-2)*p_theta_now + a0*theta_mi1 - (1-a1+a0)*p_theta_mi1;
-			p_phi_pl1 = -(a1-2)*p_phi_now + a0*phi_mi1 - (1-a1+a0)*p_phi_mi1;
-			p_DelU1_pl1 = -(a1-2)*p_DelU1_now + a0*DelU1_mi1 - (1-a1+a0)*p_DelU1_mi1;
+			p_theta_pl1 = -(a1-2)*p_theta_now + a0*theta - (1-a1+a0)*p_theta_mi1;
+			p_phi_pl1 = -(a1-2)*p_phi_now + a0*phi - (1-a1+a0)*p_phi_mi1;
+			//p_DelU1_pl1 = -(a1-2)*p_DelU1_now + a0*DelU1_mi1 - (1-a1+a0)*p_DelU1_mi1;
 
 			// temporary output of DOB before it meets the outloop controller
 			theta_tmp = theta_tmp - p_theta_now;
 			phi_tmp = phi_tmp - p_phi_now;
-			DelU1_tmp = DelU1_tmp - p_DelU1_now;
+			//DelU1_tmp = DelU1_tmp - p_DelU1_now;
 
 			//saturate the DOB output
 			theta_tmp = std::clamp(theta_tmp, -0.35f, 0.35f); // theta 0.35rad = 20 \degree
 			phi_tmp = std::clamp(phi_tmp, -0.35f, 0.35f); // phi 0.35rad = 20 \degree
-			DelU1_tmp = std::clamp(DelU1_tmp, -10.0f, 10.0f); // +-10 N centered at hovering thrust
+			//DelU1_tmp = std::clamp(DelU1_tmp, -10.0f, 10.0f); // +-10 N centered at hovering thrust
 			//--------------------------------------------------------//
 
-
-			//-----Nominal Outloop Controller part --------------------//
-			// Caclulate nominal control from outloop Controller (LQR)
-
-			// theta_nom = K_pos[0][0]*(X_del_dyn- x_del_desired_dyn) + K_pos[0][1]*(Y_del_dyn-y_del_desired_dyn) + K_pos[0][2]*(Z_del_dyn -z_del_desired_dyn) + K_pos[0][3]*vx_dyn + K_pos[0][4]*vy_dyn + K_pos[0][5]*vz_dyn;
-			// phi_nom = K_pos[1][0]*(X_del_dyn- x_del_desired_dyn)  + K_pos[1][1]*(Y_del_dyn-y_del_desired_dyn) + K_pos[1][2]*(Z_del_dyn -z_del_desired_dyn) + K_pos[1][3]*vx_dyn + K_pos[1][4]*vy_dyn + K_pos[1][5]*vz_dyn;
-			// Del_U1_nom = K_pos[2][0]*(X_del_dyn- x_del_desired_dyn)  + K_pos[2][1]*(Y_del_dyn-y_del_desired_dyn)+ K_pos[2][2]*(Z_del_dyn -z_del_desired_dyn) + K_pos[2][3]*vx_dyn + K_pos[2][4]*vy_dyn + K_pos[2][5]*vz_dyn;
-
-			// theta_nom = K_pos[0][0]*(x_del_desired_dyn - X_del_dyn) + K_pos[0][1]*(y_del_desired_dyn- Y_del_dyn) + K_pos[0][2]*(z_del_desired_dyn - Z_del_dyn) + K_pos[0][3]*(0 - vx_dyn) + K_pos[0][4]*(0-vy_dyn) + K_pos[0][5]*(0-vz_dyn);
-			// phi_nom = K_pos[1][0]*(x_del_desired_dyn - X_del_dyn)  + K_pos[1][1]*(y_del_desired_dyn- Y_del_dyn) + K_pos[1][2]*(z_del_desired_dyn - Z_del_dyn) + K_pos[1][3]*(0 - vx_dyn) + K_pos[1][4]*(0-vy_dyn) + K_pos[1][5]*(0-vz_dyn);
-			// Del_U1_nom = K_pos[2][0]*(x_del_desired_dyn - X_del_dyn)  + K_pos[2][1]*(y_del_desired_dyn- Y_del_dyn)+ K_pos[2][2]*(z_del_desired_dyn - Z_del_dyn) + K_pos[2][3]*(0 - vx_dyn) + K_pos[2][4]*(0-vy_dyn) + K_pos[2][5]*(0-vz_dyn);
-			
-			//quaternionToNED(quatern, phi, theta, psi);
-			// // //Change to Body frame (maybe we need to use current attitude ??, not desired attitude)
-			// X_ddot = cos(theta)*cos(heading_now)*X_ddot_tmp + (sin(phi)*sin(theta)*cos(heading_now) + cos(phi)*sin(heading_now))*Y_ddot_tmp + (-cos(phi)*sin(theta)*cos(heading_now)+sin(phi)*sin(heading_now))*Z_ddot_tmp;
-			// Y_ddot = (-cos(theta)*sin(heading_now))*X_ddot_tmp + (-sin(phi)*sin(theta)*sin(heading_now)+cos(phi)*cos(heading_now))*Y_ddot_tmp + (cos(phi)*sin(theta)*sin(heading_now)+sin(phi)*cos(heading_now))*Z_ddot_tmp;
-			// Z_ddot = sin(theta)*X_ddot_tmp -sin(phi)*cos(theta)*Y_ddot_tmp + cos(phi)*cos(theta)*Z_ddot_tmp;
-			
-			
-			
-			
-			// // reverse sign! Since u = - K (x_desired - X)
-			// theta_nom *=-1;
-			// hi_nom *=-1;
-			// Del_U1_nom *=-1; //
-			
-			// theta_nom = std::clamp(theta_nom, -0.35f, 0.35f); // theta 0.35rad = 20 \degree
-			// phi_nom = std::clamp(phi_nom, -0.35f, 0.35f); // phi 0.35rad = 20 \degree
-			// Del_U1_nom = std::clamp(Del_U1_nom, -10.0f, 10.0f); // +-10 N centered at hovering thrust0
-			//----------------------------------------------------------//
-			theta_tmp = - theta_tmp;
-			phi_tmp = - phi_tmp;
-			DelU1_tmp = - DelU1_tmp;
+			theta_now = - theta_tmp;
+			phi_now = - phi_tmp;
+			//DelU1_tmp = - DelU1_tmp;
+			// theta_now = theta_tmp;
+			// phi_now = phi_tmp;
 
 			// //SET Below 0 to Not use DOB!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Cutoff DOB to test only LQR
 			// theta_tmp = 0;
@@ -659,83 +657,54 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			// DelU1_tmp = 0;
 
 			//Calculate input !!!
-			theta_now = theta_nom - theta_tmp;
-			phi_now = phi_nom - phi_tmp;
-			DelU1_now = Del_U1_nom - DelU1_tmp;
+			// theta_now = theta_nom - theta_tmp;
+			// phi_now = phi_nom - phi_tmp;
+			// DelU1_now = Del_U1_nom - DelU1_tmp;
+			// theta_now = - theta_tmp;
+			// phi_now = 0 - phi_tmp;
+			// DelU1_now = 0 - DelU1_tmp;
 
 			// Clip values ! 
 			theta_now = std::clamp(theta_now, -0.3f, 0.3f); // theta 0.35rad = 20 \degree
 			phi_now = std::clamp(phi_now, -0.3f, 0.3f); // phi 0.35rad = 20 \degree
-			DelU1_now = std::clamp(DelU1_now, -8.0f, 8.0f); // +-10 N centered at hovering thrust
+			//DelU1_now = std::clamp(DelU1_now, -8.0f, 8.0f); // +-10 N centered at hovering thrust
 			
 			//--------Conversion--------------------------------------//
 
-			//calculate x,y,z acceleration value (in dynamics frame)
-			// X_ddot_tmp = (cos(phi_now)*sin(theta_now)*cos(heading_dyn) +sin(phi_now)*sin(heading_dyn))*(mass_drone*g + DelU1_now)/mass_drone;
-			// Y_ddot_tmp = (cos(phi_now)*sin(theta_now)*sin(heading_dyn) -sin(phi_now)*cos(heading_dyn))*(mass_drone*g + DelU1_now)/mass_drone;
-			// Z_ddot_tmp = -g + (cos(phi_now)*cos(theta_now))*(mass_drone*g + DelU1_now)/mass_drone;
+			// X_ddot = (-cos(phi_now)*sin(theta_now)*cos(heading_now) - sin(phi_now)*sin(heading_now))*(mass_drone*g - DelU1_now)/mass_drone;
+			// Y_ddot = (-cos(phi_now)*sin(theta_now)*sin(heading_now) + sin(phi_now)*cos(heading_now))*(mass_drone*g - DelU1_now)/mass_drone;
+			//Z_ddot = g - (cos(phi_now)*cos(theta_now))*(mass_drone*g - DelU1_now)/mass_drone;
 
-			// // DESIRED x,y,z acceleration in Inertial Frame
-			// X_ddot_tmp = (-cos(phi_now)*sin(theta_now)*cos(heading_now) - sin(phi_now)*sin(heading_now))*(mass_drone*g - DelU1_now)/mass_drone;
-			// //X_ddot_tmp = (-cos(phi_now)*sin(theta_now))*(mass_drone*g - DelU1_now)/mass_drone;
-			// Y_ddot_tmp = (-cos(phi_now)*sin(theta_now)*sin(heading_now) + sin(phi_now)*cos(heading_now))*(mass_drone*g - DelU1_now)/mass_drone;
-			// // Y_ddot_tmp = (sin(phi_now))*(mass_drone*g - DelU1_now)/mass_drone;
-			// Z_ddot_tmp = g - (cos(phi_now)*cos(theta_now))*(mass_drone*g - DelU1_now)/mass_drone;
-
-			// //theta_now = phi_now = 0.0;
-			// quaternionToNED(quatern, phi, theta, psi);
-			// // //Change to Body frame (maybe we need to use current attitude ??, not desired attitude)
-			// X_ddot = cos(theta)*cos(heading_now)*X_ddot_tmp + (sin(phi)*sin(theta)*cos(heading_now) + cos(phi)*sin(heading_now))*Y_ddot_tmp + (-cos(phi)*sin(theta)*cos(heading_now)+sin(phi)*sin(heading_now))*Z_ddot_tmp;
-			// Y_ddot = (-cos(theta)*sin(heading_now))*X_ddot_tmp + (-sin(phi)*sin(theta)*sin(heading_now)+cos(phi)*cos(heading_now))*Y_ddot_tmp + (cos(phi)*sin(theta)*sin(heading_now)+sin(phi)*cos(heading_now))*Z_ddot_tmp;
-			// Z_ddot = sin(theta)*X_ddot_tmp -sin(phi)*cos(theta)*Y_ddot_tmp + cos(phi)*cos(theta)*Z_ddot_tmp;
+			// use acceleration feed forward
+			// pos_acceleration[0] = X_ddot;
+			// pos_acceleration[1] = Y_ddot;
+			// // pos_acceleration[0] = 0;
+			// // pos_acceleration[1] = 0;
+			// pos_acceleration[2] = 0;
 			
-			// X_ddot = -g*sin(theta_now);
-			// Y_ddot = g*cos(theta_now)*sin(phi_now);
-			// Z_ddot = g*cos(theta_now)*cos(phi_now)-(mass_drone*g - DelU1_now)/mass_drone;
-
-			// // In vehicle-1 frame // 
-			// X_ddot_tmp = -cos(phi_now)*sin(theta_now)*(mass_drone*g - DelU1_now)/(mass_drone);
-			// Y_ddot_tmp = sin(phi_now)*(mass_drone*g- DelU1_now)/(mass_drone);
-			// Z_ddot_tmp = g - cos(phi_now)*cos(theta_now)*(mass_drone*g - DelU1_now)/(mass_drone);
-
-			// //return to NED inertial frmae
-			// X_ddot = cos(heading_now)*X_ddot_tmp - sin(heading_now)*Y_ddot_tmp;
-			// Y_ddot = sin(heading_now)*X_ddot_tmp + cos(heading_now)*Y_ddot_tmp;
-			// Z_ddot = Z_ddot_tmp;
-
-			// quaternionToNED(quatern, phi, theta, psi);
-			// // //Change to Body frame (maybe we need to use current attitude ??, not desired attitude)
-			// X_ddot = cos(theta)*cos(heading_now)*X_ddot_tmp + (sin(phi)*sin(theta)*cos(heading_now) - cos(phi)*sin(heading_now))*Y_ddot_tmp + (cos(phi)*sin(theta)*cos(heading_now)+sin(phi)*sin(heading_now))*Z_ddot_tmp;
-			// Y_ddot = (cos(theta)*sin(heading_now))*X_ddot_tmp + (sin(phi)*sin(theta)*sin(heading_now)+cos(phi)*cos(heading_now))*Y_ddot_tmp + (cos(phi)*sin(theta)*sin(heading_now)-sin(phi)*cos(heading_now))*Z_ddot_tmp;
-			// Z_ddot = -sin(theta)*X_ddot_tmp +sin(phi)*cos(theta)*Y_ddot_tmp + cos(phi)*cos(theta)*Z_ddot_tmp;
-
-			X_ddot = (-cos(phi_now)*sin(theta_now)*cos(heading_now) - sin(phi_now)*sin(heading_now))*(mass_drone*g - DelU1_now)/mass_drone;
-			Y_ddot = (-cos(phi_now)*sin(theta_now)*sin(heading_now) + sin(phi_now)*cos(heading_now))*(mass_drone*g - DelU1_now)/mass_drone;
-			Z_ddot = g - (cos(phi_now)*cos(theta_now))*(mass_drone*g - DelU1_now)/mass_drone;
-
-			pos_acceleration[0] = X_ddot;
-			pos_acceleration[1] = Y_ddot;
-			pos_acceleration[2] = Z_ddot;
-			
-			std::copy(std::begin(pos_acceleration), std::end(pos_acceleration), msg.acceleration.begin());
+			//std::copy(std::begin(pos_acceleration), std::end(pos_acceleration), msg.acceleration.begin());
 			msg.yaw = heading_home;
 			//msg.yaw = -2; // ERASE THIS!!!
-			msg.x = NAN;
-			msg.y = NAN;
-			msg.z = NAN;
+			msg.x = X_home + x_del_desired;
+			msg.y = Y_home + y_del_desired;
+			msg.z = Z_home + z_del_desired;
 			msg.vx = NAN;
 			msg.vy = NAN;
 			msg.vz = NAN;
 
+			msgA.roll_body = phi_now;
+			msgA.pitch_body = theta_now;
+
 			if(offboard_setpoint_counter_% 200==0){
-				std::cout << "\nz-acceleration (Desired, NED) : " << pos_acceleration[2] << std::endl;
 				std::cout << "current z position : " << Z <<std::endl;
 				//std::cout << "current y position : " << Y <<std::endl;
 				std::cout << "heading : " << heading <<std::endl;
 				std::cout << "phi_tmp: " << phi_tmp<< std::endl;
+				std::cout <<"phi_now : "<<phi_now << " / phi : " << phi <<std::endl;
 			}
 
 			trajectory_setpoint_publisher_->publish(msg);
+			vehicle_attitude_setpoint_publisher_->publish(msgA);
 			
 			// --------- time shift !!!!------------------//
 			theta_mi2 = theta_mi1;
@@ -744,8 +713,8 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			phi_mi2 = phi_mi1;
 			phi_mi1 = phi_now;
 
-			DelU1_mi2 = DelU1_mi1;
-			DelU1_mi1 = DelU1_now;
+			// DelU1_mi2 = DelU1_mi1;
+			// DelU1_mi1 = DelU1_now;
 
 			//
 			qx_now = qx_pl1;
@@ -754,8 +723,8 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			qy_now = qy_pl1;
 			qy_pl1 = qy_pl2;
 
-			qz_now = qz_pl1;
-			qz_pl1 = qz_pl2;
+			// qz_now = qz_pl1;
+			// qz_pl1 = qz_pl2;
 			//
 			p_theta_mi1 = p_theta_now;
 			p_theta_now = p_theta_pl1;
@@ -763,8 +732,8 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			p_phi_mi1 = p_phi_now;
 			p_phi_now = p_phi_pl1;
 
-			p_DelU1_mi1 = p_DelU1_now;
-			p_DelU1_now = p_DelU1_pl1;
+			// p_DelU1_mi1 = p_DelU1_now;
+			// p_DelU1_now = p_DelU1_pl1;
 			//---------------------------------------------//
 			
 
