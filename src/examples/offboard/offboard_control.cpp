@@ -556,14 +556,14 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 		else if(offboard_setpoint_counter_ <= 500){ // Before LQR command, go upward to (0,0,-2) slowly, from t = 0 ~ 5s
 			msg.x = X_home + 0.0;
 			msg.y = Y_home + 0.0;
-			msg.z = Z_home - 0.5 - 0.004*offboard_setpoint_counter_;
+			msg.z = Z_home - 0.1 - 0.004*offboard_setpoint_counter_;
 			msg.yaw = heading_home;
 			trajectory_setpoint_publisher_->publish(msg);
 		}
 		else if(offboard_setpoint_counter_ <= 1000){ // go position (0,1,-2) to start circle motion, from t = 5s~10s
 			msg.x = X_home + 0.0;
 			msg.y = Y_home + 1.0;
-			msg.z = Z_home - 2.5; 
+			msg.z = Z_home - 2.0; 
 			msg.yaw = heading_home;
 			trajectory_setpoint_publisher_->publish(msg);
 
@@ -582,7 +582,7 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 
 			// x_del_desired = 0.0;
 			// y_del_desired = 1.0;
-			z_del_desired = -2.5; // 2.5m height
+			z_del_desired = -2.0; // 2.5m height
 			heading_now = heading;	
 
 			// local position in Vehicle-1 frame (heading frame)
@@ -741,7 +741,7 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 		else if(offboard_setpoint_counter_ <= 4500){ // move to the center, from t = 40s~45s
 			msg.x = X_home + 0.0;
 			msg.y = Y_home + 0.0;
-			msg.z = Z_home - 2.5; 
+			msg.z = Z_home - 2.0; 
 			msg.yaw = heading_home;
 			trajectory_setpoint_publisher_->publish(msg);
 		}
@@ -752,7 +752,7 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			//std::cout << "LAND Command Send" << std::endl;
 			msg.x = X_home + 0.0;
 			msg.y = Y_home + 0.0;
-			msg.z = Z_home - 2.5 + 0.004 * (offboard_setpoint_counter_ - 4500); // 
+			msg.z = Z_home - 2.1 + 0.004 * (offboard_setpoint_counter_ - 4500); // 
 			msg.yaw = heading_home; 
 			trajectory_setpoint_publisher_->publish(msg);
 		}
