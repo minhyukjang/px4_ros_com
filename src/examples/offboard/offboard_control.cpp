@@ -688,15 +688,15 @@ void OffboardControl::publish_trajectory_setpoint(uint64_t offboard_setpoint_cou
 			msg.x = X_home + x_del_desired;
 			msg.y = Y_home + y_del_desired;
 			msg.z = Z_home + z_del_desired;
-			msg.vx = NAN;
-			msg.vy = NAN;
-			msg.vz = NAN;
+			// msg.vx = NAN;
+			// msg.vy = NAN;
+			// msg.vz = NAN;
 
 			msgA.roll_body = phi_now;
 			msgA.pitch_body = theta_now;
 
 			if(offboard_setpoint_counter_% 200==0){
-				std::cout << "current z position : " << Z <<std::endl;
+				std::cout << "current z position : " << Z_del <<std::endl;
 				//std::cout << "current y position : " << Y <<std::endl;
 				std::cout << "heading : " << heading <<std::endl;
 				std::cout << "phi_tmp: " << phi_tmp<< std::endl;
